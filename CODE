@@ -1,0 +1,164 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import sklearn
+!pip install category_encoders
+
+# from google.colab import drive
+# drive.mount('/content/drive')
+
+df = pd.read_csv("weatherAUS.csv")
+col_names = df.columns
+df.drop(['RISK_MM'], axis=1, inplace=True)
+
+'''Veamos las distribución de la target variable. Se puede apreciar la cantidad de YES and NO que aparecen'''
+f, ax= plt.subplots(figsize= (6, 8))
+ax=sns.countplot(x='RainTomorrow', data=df, palette='Set1')
+plt.show()
+
+'''Ahora se hará un análisis de las variables categóricas presentes en el dataset.'''
+
+categorical = [var for var in df.columns if df[var].dtype=='O']
+print('Hay {} variables categóricas \n'.format(len(categorical)))
+print('Las variables categóricas son:', categorical)
+cat1 = [var for var in categorical if df[var].isnull().sum()!=0]
+print(df[cat1].isnull().sum())
+
+
+df['Date'] = pd.to_datetime(df['Date'])
+df['Year'] = df['Date'].dt.year
+df['Month'] = df['Date'].dt.month
+df['Day'] = df['Date'].dt.day
+df.drop('Date', axis=1, inplace = True)
+
+pd.get_dummies(df.Location, drop_first=True).head()
+#'''¿Cuál es la frecuencia de las variables categóricas?'''
+pd.get_dummies(df.WindGustDir, drop_first=True, dummy_na=True).head()
+pd.get_dummies(df.WindGustDir, drop_first=True, dummy_na=True).sum(axis=0)
+pd.get_dummies(df.WindDir9am, drop_first=True, dummy_na=True).head()
+pd.get_dummies(df.WindDir9am, drop_first=True, dummy_na=True).sum(axis=0)
+pd.get_dummies(df.WindDir3pm, drop_first=True, dummy_na=True).head()
+pd.get_dummies(df.WindDir3pm, drop_first=True, dummy_na=True).sum(axis=0)
+pd.get_dummies(df.RainToday, drop_first=True, dummy_na=True).head()
+pd.get_dummies(df.RainToday, drop_first=True, dummy_na=True).sum(axis=0)
+
+numerical = [var for var in df.columns if df[var].dtype!='O']
+
+IQR = df.Rainfall.quantile(0.75) - df.Rainfall.quantile(0.25)
+Lower_fence = df.Rainfall.quantile(0.25) - (IQR * 3)
+Upper_fence = df.Rainfall.quantile(0.75) + (IQR * 3)
+
+IQR = df.Evaporation.quantile(0.75) - df.Evaporation.quantile(0.25)
+Lower_fence = df.Evaporation.quantile(0.25) - (IQR * 3)
+Upper_fence = df.Evaporation.quantile(0.75) + (IQR * 3)
+
+IQR = df.WindSpeed9am.quantile(0.75) - df.WindSpeed9am.quantile(0.25)
+Lower_fence = df.WindSpeed9am.quantile(0.25) - (IQR * 3)
+Upper_fence = df.WindSpeed9am.quantile(0.75) + (IQR * 3)
+
+IQR = df.WindSpeed3pm.quantile(0.75) - df.WindSpeed3pm.quantile(0.25)
+Lower_fence = df.WindSpeed3pm.quantile(0.25) - (IQR * 3)
+Upper_fence = df.WindSpeed3pm.quantile(0.75) + (IQR * 3)
+
+correlation = df.corr()
+plt.figure(figsize=(16,12))
+plt.title('Correlation Heatmap of Rain in Australia Dataset')
+ax = sns.heatmap(correlation, square=True, annot=True, fmt='.2f', linecolor='white')
+ax.set_xticklabels(ax.get_xticklabels(), rotation=90)
+ax.set_yticklabels(ax.get_yticklabels(), rotation=30)           
+plt.show()
+
+num_var = ['MinTemp', 'MaxTemp', 'Temp9am', 'Temp3pm', 'WindGustSpeed', 'WindSpeed3pm', 'Pressure9am', 'Pressure3pm']
+sns.pairplot(df[num_var], kind='scatter', diag_kind='hist', palette='Rainbow')
+plt.show()
+
+
+'''Declaración del vector feature y de la variable objetivo'''
+
+X = df.drop(['RainTomorrow'], axis=1)
+
+y = df['RainTomorrow']
+
+# split X and y into training and testing sets
+
+from sklearn.model_selection import train_test_split
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2, random_state = 0)
+
+categorical = [col for col in X_train.columns if X_train[col].dtypes == 'O']
+numerical = [col for col in X_train.columns if X_train[col].dtypes != 'O']
+
+for df1 in [X_train, X_test]:
+    for col in numerical:
+        col_median=X_train[col].median()
+        df1[col].fillna(col_median, inplace=True) 
+
+
+# impute missing categorical variables with most frequent value
+
+
+for df2 in [X_train, X_test]:
+    df2['WindGustDir'].fillna(X_train['WindGustDir'].mode()[0], inplace=True)
+    df2['WindDir9am'].fillna(X_train['WindDir9am'].mode()[0], inplace=True)
+    df2['WindDir3pm'].fillna(X_train['WindDir3pm'].mode()[0], inplace=True)
+    df2['RainToday'].fillna(X_train['RainToday'].mode()[0], inplace=True)
+
+X_train[categorical].isnull().sum()
+
+def max_value(df3, variable, top):
+    return np.where(df3[variable]>top, top, df3[variable])
+
+for df3 in [X_train, X_test]:
+    df3['Rainfall'] = max_value(df3, 'Rainfall', 3.2)
+    df3['Evaporation'] = max_value(df3, 'Evaporation', 21.8)
+    df3['WindSpeed9am'] = max_value(df3, 'WindSpeed9am', 55)
+    df3['WindSpeed3pm'] = max_value(df3, 'WindSpeed3pm', 57)
+
+    
+import category_encoders as ce
+encoder = ce.BinaryEncoder(cols=['RainToday'])
+X_train = encoder.fit_transform(X_train)
+X_test = encoder.transform(X_test)
+X_train = pd.concat([X_train[numerical], X_train[['RainToday_0', 'RainToday_1']],
+                     pd.get_dummies(X_train.Location), 
+                     pd.get_dummies(X_train.WindGustDir),
+                     pd.get_dummies(X_train.WindDir9am),
+                     pd.get_dummies(X_train.WindDir3pm)], axis=1)
+
+X_test = pd.concat([X_test[numerical], X_test[['RainToday_0', 'RainToday_1']],
+                     pd.get_dummies(X_test.Location), 
+                     pd.get_dummies(X_test.WindGustDir),
+                     pd.get_dummies(X_test.WindDir9am),
+                     pd.get_dummies(X_test.WindDir3pm)], axis=1)
+
+cols = X_train.columns
+
+from sklearn.preprocessing import MinMaxScaler
+scaler = MinMaxScaler()
+X_train = scaler.fit_transform(X_train)
+X_test = scaler.transform(X_test)
+X_train = pd.DataFrame(X_train, columns=[cols])
+X_test = pd.DataFrame(X_test, columns=[cols])
+
+
+from sklearn.linear_model import LogisticRegression
+
+#Inicio del modelo
+logreg = LogisticRegression(solver='liblinear', random_state=0)
+#Entrenamiento del modelo
+logreg.fit(X_train, y_train)
+
+#Predicción del modelo
+y_pred_test = logreg.predict(X_test)
+y_pred_test
+
+#Precisión del modelo
+from sklearn.metrics import accuracy_score
+print('El puntaje de la precisión del modelo es: {0:0.4f}'.format(accuracy_score(y_test, y_pred_test)))
+
+from sklearn.ensemble import RandomForestClassifier
+estimator = RandomForestClassifier()
+estimator.fit(X_train, y_train)
+y_pred_test = estimator.score(X_test, y_test)
+print(y_pred_test)
